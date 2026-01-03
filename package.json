@@ -6,6 +6,7 @@
     "dev": "astro dev",
     "start": "astro dev",
     "build": "astro build",
+    "postbuild": "bash ./scripts/postbuild.sh",
     "preview": "astro preview",
     "astro": "astro"
   },
@@ -17,5 +18,10 @@
     "starlight-links-validator": "^0.19.2",
     "starlight-scroll-to-top": "^0.4.0",
     "yaml": "^2.8.2"
+  },
+  "devDependencies": {
+    "puppeteer": "^23.11.1",
+    "puppeteer-autoscroll-down": "^2.0.1",
+    "starlight-to-pdf": "^1.4.0"
   }
 }
