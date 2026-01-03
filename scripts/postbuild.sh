@@ -110,7 +110,19 @@ generate_pdf() {
     pdf_cmd="npx starlight-to-pdf"
   fi
 
-  $pdf_cmd "$url" --contents-links internal --filename aerynos --path "$DIST_DIR"
+  local pdf_args=("$url" --contents-links internal --filename aerynos --path "$DIST_DIR")
+  local browser_exec="${PDF_BROWSER_EXECUTABLE:-}"
+  if [[ -z "$browser_exec" && ("${CI:-}" == "true" || "${GITHUB_ACTIONS:-}" == "true") ]]; then
+    local wrapper="$ROOT_DIR/scripts/chromium-no-sandbox.sh"
+    if [[ -x "$wrapper" ]] && "$wrapper" --probe; then
+      browser_exec="$wrapper"
+    fi
+  fi
+  if [[ -n "$browser_exec" ]]; then
+    pdf_args+=(--browser-executable "$browser_exec")
+  fi
+
+  $pdf_cmd "${pdf_args[@]}"
 }
 
 copy_markdown
