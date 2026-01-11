@@ -3,12 +3,13 @@ title: Manage Moss States and Packages
 lastUpdated: 2025-09-28T16:14:34Z
 description: Learn how to inspect and switch states, search for software, and keep an AerynOS system up to date with moss.
 ---
+import { Aside } from '@astrojs/starlight/components';
 
 Moss keeps track of packaging-related operations that change the state of the /usr directory by creating a new filesystem transaction (fstx) for each associated moss operation, be it package installation, removal or upgrades. 
 
 Use the commands below to inspect and manage those states, discover software, and keep your system current.
 
-## Check the current state
+### Check the current state
 
 1. List the active state to confirm what is running right now.
 
@@ -24,7 +25,7 @@ moss state list
 
 Use the state ID (the number after `State #`) when you need to query or activate a specific snapshot.
 
-## Activate a different state
+### Activate a different state
 
 Follow these steps to roll back or advance to another state safely.
 
@@ -45,7 +46,7 @@ Activating a state atomically swaps the currently active state's /usr directory 
 
 On successful activation of the new state, it is recommended to reboot the system, so that long-running services start with the expected binaries, libraries, and configurations.
 
-## Search for packages
+### Search for packages
 
 Use keyword searches to discover software by name or summary.
 
@@ -55,7 +56,7 @@ sudo moss search fractional
 
 Add `--installed` (`-i`) if you only want to search software that is already present on the system.
 
-## Search for installed files
+### Search for installed files
 
 Look up which package delivered a specific file when you troubleshoot or audit an installation.
 
@@ -65,7 +66,7 @@ sudo moss search-file libEGL.so
 
 `moss search-file` scans files from installed packages only.
 
-## Install software
+### Install software
 
 1. Refresh repository metadata when needed.
 
@@ -81,7 +82,7 @@ sudo moss install howdy-git
 
 Moss creates a new state automatically. Confirm success with `moss state active`.
 
-## Update the system
+### Update the system
 
 Keep the entire system current with a sync operation.
 
@@ -91,7 +92,7 @@ sudo moss sync --update
 
 `--update` (`-u`) pulls fresh repository metadata before applying upgrades. Moss records the result as a new state, so you can roll back if something goes wrong.
 
-## Remove software
+### Remove software
 
 Uninstall packages you no longer need.
 
@@ -101,9 +102,47 @@ sudo moss remove howdy-git
 
 Moss snapshots the removal in a new state. Use `moss state list` to find the previous state if you have to recover.
 
-## List currently installed software
+### List currently installed software
 
 
 ```bash
 moss list installed
+```
+
+## System-model
+
+<Aside type="caution">
+    The system model is a fundemental change in how the system is managed. Please keep this in mind and carefully read the instructions below.
+</Aside>
+
+The system-model is an opt in feature on AerynOS that allows us to use a .KDL file to declare the repositories and packages that should be present on our system.
+Once we switch to the system model if we want to install new packages we will have to modify the system-model.kdl file in /usr/? we then need to sync our system we can do so by running the sync command.
+
+```bash
+sudo moss sync -u
+```
+This will check the system-model file for changes and apply those changes.
+
+### Opt-in
+
+```bash
+sudo moss 
+```
+The opt-in can also be undone by removing the KDL file.
+
+```bash
+sudo rm 
+```
+
+<br></br><br></br>
+We can both **export** and **import** a system model file. This means you can export your current system configuration and someone else can import that configuration to get the same installed packages and repositories. 
+### Export a system-model file
+```bash
+sudo moss 
+```
+
+### Import a system-model file
+
+```bash
+sudo moss 
 ```
