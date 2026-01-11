@@ -1,0 +1,20 @@
+---
+title: " Unmount Partitions"
+---
+
+1. Exit the chroot environment by pressing <kbd>CTRL + D</kbd>
+2. Unmount the AerynOS partitions:
+   ```bash
+   umount -R /target
+   ```
+3. If your drive is encrypted:
+	1. Deactivate your logical volumes and volume groups:
+	   ```bash
+	   lvchange -a n /dev/AerynOSSystem/Swap
+	   lvchange -a n /dev/AerynOSSystem/Root
+	   vgchange -a n AerynOSSystem
+	   ```
+	2. Close the LUKS partition:
+	   ```bash
+	   cryptsetup luksClose decrypted
+	   ```

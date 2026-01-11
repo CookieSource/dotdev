@@ -31,11 +31,23 @@ export default defineConfig({
       //   hi: { label: "Hindi", lang: "hi" },
       // },
       // defaultLocale: "root",
-      social: {
-        github: "https://github.com/AerynOS/dotdev",
-        zulip: "https://aerynos.zulipchat.com/join/fuqokhsomj5mzqj6akqaiqlr/",
-        mastodon: "https://hachyderm.io/@AerynOS",
-      },
+      social: [
+        {
+          icon: "github",
+          label: "GitHub",
+          href: "https://github.com/AerynOS/dotdev",
+        },
+        {
+          icon: "zulip",
+          label: "Zulip",
+          href: "https://aerynos.zulipchat.com/join/fuqokhsomj5mzqj6akqaiqlr/",
+        },
+        {
+          icon: "mastodon",
+          label: "Mastodon",
+          href: "https://hachyderm.io/@AerynOS",
+        },
+      ],
       customCss: ["@/styles/global.css"],
       editLink: {
         baseUrl: "https://github.com/AerynOS/dotdev/edit/main/",
@@ -98,6 +110,22 @@ export default defineConfig({
                 { slug: "users/system-management" },
                 { slug: "users/system-management/configuration-locations" },
                 { slug: "users/system-management/moss-state-management" },
+              ],
+            },
+            {
+              label: "Customization",
+              items: [
+                { slug: "users/customization" },
+                { slug: "users/customization/kernelcomparison" },
+                { slug: "users/customization/file-system-comparison" },
+                { slug: "users/customization/shell" },
+              ],
+            },
+            {
+              label: "How-To",
+              items: [
+                { slug: "users/howto" },
+                { slug: "users/howto/chroot" },
               ],
             },
             {

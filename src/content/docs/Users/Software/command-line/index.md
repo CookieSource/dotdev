@@ -1,0 +1,161 @@
+---
+title: Command Line
+summary: Installation and configuration of popular command line programs on AerynOS
+---
+
+# Command Line
+
+## Changing Shell
+
+When using a terminal session to perform command-line activities, a Unix shell is used to interpret commands. The default shell on AerynOS is Bash, however changing your shell may enable additional features and functionality.
+
+AerynOS makes available other shells via our repository, with a full list available in `/usr/share/defaults/etc/shells`. Common shells, aside from Bash, are:
+
+- [DASH](http://gondor.apana.org.au/~herbert/dash/)
+- [fish](https://fishshell.com/)
+- [zsh](https://zsh.sourceforge.io/)
+
+### Installation
+
+In order to use a shell different from Bash, you may need to install the respective package for the shell to be able to work. You can install those packages via the command-line with `sudo moss install <Name of the Shell>`.
+
+Example:
+
+```bash
+sudo moss install fish
+```
+
+### Switching
+
+To switch to another shell, first install the appropriate package, followed by the command `chsh` (change shell) to change the shell for your user session, using the path provided in `/usr/share/defaults/etc/shells`. Lastly you need to log out and back in again for the change to take effect.
+
+Example:
+
+- For zsh: `chsh -s /bin/zsh`
+
+- For fish: `chsh -s /usr/bin/fish`
+
+### Troubleshooting
+
+If the default shell is not changed, you must add the shell to `/etc/shells` via the command `sh` with `sudo`.
+
+Example:
+
+- For zsh: `echo "/bin/zsh" | sudo tee -a /etc/shells`
+
+- For fish: `echo "/usr/bin/fish" | sudo tee -a /etc/shells`
+
+## fzf
+
+[fzf](https://github.com/junegunn/fzf) is a general-purpose command-line fuzzy finder. It can be used as an interactive Unix filter with any list: files, command history, processes, hostnames, bookmarks, git commits, etc.
+
+### Installation
+
+The fzf project consists of the following components: an `fzf` executable, an `fzf-tmux` script for launching fzf in a tmux pane, shell extensions (including key bindings and command-line fuzzy auto-completion), and a vim/Neovim plugin file. They are all available in the `fzf` package. Install that package via moss in a terminal:
+
+```bash
+sudo moss install fzf
+```
+
+The shell extensions are not enabled by default after the `fzf` package is installed. The procedures to enable these features are described below. For more tips and examples on the usage of `fzf`, visit its [GitHub repository](https://github.com/junegunn/fzf) and [Wiki pages](https://github.com/junegunn/fzf/wiki/examples).
+
+### Fuzzy Auto-Completion
+
+[Fuzzy completion](https://github.com/junegunn/fzf#fuzzy-completion-for-bash-and-zsh) for files and directories can be triggered by a trigger sequence (`**` by default) followed by the `TAB` key for `bash` and `zsh`. To enable this feature, add the following lines to the shell configuration file depending on the shell you use (`~/.bashrc` for `bash` and `~/.zshrc` for `zsh`).
+
+#### Bash
+
+```bash
+FZF_COMPLETION_FILE=/usr/share/bash-completion/completions/fzf
+[[ -f $FZF_COMPLETION_FILE ]] && source $FZF_COMPLETION_FILE
+```
+
+#### Zsh
+
+```bash
+FZF_COMPLETION_FILE=/usr/share/zsh/site-functions/_fzf
+[[ -f $FZF_COMPLETION_FILE ]] && source $FZF_COMPLETION_FILE
+```
+
+### Key Bindings
+
+`fzf` can use specific [key bindings](https://github.com/junegunn/fzf#key-bindings-for-command-line) to trigger a search over a list of files, command history and directories and paste the result onto the command-line. Follow these steps to set up the key bindings for your favorite shell.
+
+#### Bash
+
+Add the following content to `~/.bashrc`:
+
+```bash
+FZF_KEYBINDING_FILE=/usr/share/fzf/key-bindings.bash
+[[ -f $FZF_KEYBINDING_FILE ]] && source $FZF_KEYBINDING_FILE
+```
+
+#### Fish
+
+First create the following directory if it does not already exist:
+
+```bash
+mkdir -p $HOME/.config/fish/functions
+```
+
+`cd` into this directory and make a file `fish_user_key_bindings.fish` with the following content:
+
+```bash
+function fish_user_key_bindings
+  fzf_key_bindings
+end
+```
+
+Then create the following symlink:
+
+```bash
+ln -s /usr/share/fzf/key-bindings.fish $HOME/.config/fish/functions/fzf_key_bindings.fish
+```
+
+#### Zsh
+
+Add the following content to `~/.zshrc`:
+
+```bash
+FZF_KEYBINDING_FILE=/usr/share/fzf/key-bindings.zsh
+[[ -f $FZF_KEYBINDING_FILE ]] && source $FZF_KEYBINDING_FILE
+```
+
+## Powerline Shell Prompt
+
+[Powerline](https://github.com/powerline) is a statusline plugin for vim, and provides statuslines and prompts for several other applications, including zsh, bash, tmux, IPython, Awesome and Qtile.
+
+### Installation
+
+Powerline has two components, the plugin system itself `powerline` and the
+fonts `powerline-fonts`. Both are available via `moss` in a terminal:
+
+```bash
+sudo moss install powerline powerline-fonts
+```
+
+To get powerline working inside your terminal, you need to follow setup instructions for your preferred shell:  
+
+#### Bash
+Add the following to `$HOME/.bashrc`:
+```bash
+powerline-daemon -q
+POWERLINE_BASH_CONTINUATION=1
+POWERLINE_BASH_SELECT=1
+source /usr/lib/python3.12/site-packages/powerline/bindings/bash/powerline.sh
+```
+
+#### Fish
+Add the following to `$HOME/.config/fish/config.fish` below the comment "`# Commands to run in interactive sessions can go here`":
+```bash
+powerline-daemon -q
+set fish_function_path $fish_function_path "/usr/lib/python3.12/site-packages/powerline/bindings/fish/"
+powerline-setup
+```
+
+#### Zsh
+Add the following to `$HOME/.zshrc`:
+```bash
+source /usr/lib/python3.12/site-packages/powerline/bindings/zsh/powerline.zsh
+```
+
