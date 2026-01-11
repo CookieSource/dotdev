@@ -7,7 +7,7 @@ import starlightKbd from "starlight-kbd";
 
 // https://astro.build/config
 export default defineConfig({
-  site: "https://aeryn.cookiesource.dev",
+  site: "https://aerynos.dev",
   integrations: [
     starlight({
       logo: {
