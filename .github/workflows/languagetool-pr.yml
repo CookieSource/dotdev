@@ -1,150 +1,166 @@
-name: LanguageTool (PR review)
+name: LanguageTool (reviewdog)
 
 on:
-  # Run once when the PR is opened/re-opened.
   pull_request_target:
     types: [opened, reopened, labeled]
-
-  # Allow maintainers to rerun by commenting "/languagetool"
   issue_comment:
     types: [created]
 
 permissions:
   contents: read
   pull-requests: write
-  issues: write
 
 concurrency:
-  group: languagetool-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+  group: languagetool-${{ github.event.pull_request.number || github.event.issue.number }}
   cancel-in-progress: true
 
-env:
-  LT_LANGUAGE: en-US
-  RERUN_LABEL: languagetool:run
-
 jobs:
-  # Comment command -> adds a label -> label event triggers the real run
-  rerun_on_comment:
-    if: |
-      github.event_name == 'issue_comment' &&
-      github.event.issue.pull_request &&
-      contains(github.event.comment.body, '/languagetool') &&
-      (github.event.comment.author_association == 'MEMBER' ||
-       github.event.comment.author_association == 'OWNER' ||
-       github.event.comment.author_association == 'COLLABORATOR')
+  languagetool:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Add rerun label to PR
+      - name: Decide whether to run + gather PR info
+        id: meta
         uses: actions/github-script@v7
         with:
           script: |
-            const label = process.env.RERUN_LABEL;
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const issue_number = context.issue.number; // PR number for issue_comment
+            const eventName = context.eventName;
 
-            // Ensure label exists (create if missing)
-            try {
-              await github.rest.issues.getLabel({ owner, repo, name: label });
-            } catch (e) {
-              await github.rest.issues.createLabel({
-                owner,
-                repo,
-                name: label,
-                color: '0e8a16',
-                description: 'Rerun LanguageTool on this PR'
+            async function getPerm(username) {
+              const res = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                username,
               });
+              return res.data.permission; // admin|maintain|write|triage|read|none
             }
 
-            await github.rest.issues.addLabels({
-              owner,
-              repo,
-              issue_number,
-              labels: [label]
-            });
+            let run = false;
+            let prNumber = null;
+            let pr = null;
 
-  languagetool:
-    if: |
-      github.event_name == 'pull_request_target' &&
-      (
-        github.event.action == 'opened' ||
-        github.event.action == 'reopened' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'languagetool:run')
-      )
-    runs-on: ubuntu-latest
+            if (eventName === "pull_request_target") {
+              pr = context.payload.pull_request;
+              prNumber = pr.number;
 
-    steps:
-      - name: Checkout PR (head SHA)
+              if (context.payload.action === "labeled") {
+                run = (context.payload.label?.name === "languagetool:rerun");
+              } else {
+                // opened / reopened
+                run = true;
+              }
+            } else if (eventName === "issue_comment") {
+              // only run for PR comments
+              if (!context.payload.issue?.pull_request) {
+                run = false;
+              } else {
+                const body = (context.payload.comment?.body || "").trim();
+                const wants = body.startsWith("/languagetool");
+                if (!wants) {
+                  run = false;
+                } else {
+                  const perm = await getPerm(context.payload.comment.user.login);
+                  run = ["admin", "maintain", "write"].includes(perm);
+                }
+
+                prNumber = context.payload.issue.number;
+                const prRes = await github.rest.pulls.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: prNumber,
+                });
+                pr = prRes.data;
+              }
+            }
+
+            core.setOutput("run", run ? "true" : "false");
+            if (!pr) return;
+
+            core.setOutput("pr_number", String(prNumber));
+            core.setOutput("head_sha", pr.head.sha);
+            core.setOutput("base_sha", pr.base.sha);
+            core.setOutput("head_repo", pr.head.repo.full_name);
+            core.setOutput("base_repo", pr.base.repo.full_name);
+
+      - name: Stop early if not requested
+        if: steps.meta.outputs.run != 'true'
+        run: echo "Not running LanguageTool."
+
+      - name: Checkout PR head (safe)
+        if: steps.meta.outputs.run == 'true'
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          repository: ${{ steps.meta.outputs.head_repo }}
+          ref: ${{ steps.meta.outputs.head_sha }}
           fetch-depth: 0
+          persist-credentials: false
+          submodules: false
 
-      - name: Build LanguageTool server image with custom dictionary
-        shell: bash
+      - name: Fetch base SHA for diffing
+        if: steps.meta.outputs.run == 'true'
         run: |
           set -euo pipefail
+          git remote add upstream "https://github.com/${{ steps.meta.outputs.base_repo }}.git" || true
+          git fetch --no-tags --depth=1 upstream "${{ steps.meta.outputs.base_sha }}"
 
-          WORDS_DIR=".github/languagetool"
-          SPELLING_FILE="$WORDS_DIR/spelling.en.txt"
-          IGNORE_FILE="$WORDS_DIR/ignore.en.txt"
+      - name: Setup Python
+        if: steps.meta.outputs.run == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-          mkdir -p "$WORDS_DIR"
-          test -f "$SPELLING_FILE" || : > "$SPELLING_FILE"
-          test -f "$IGNORE_FILE"   || : > "$IGNORE_FILE"
+      - name: Install Python deps
+        if: steps.meta.outputs.run == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install requests
 
-          # Safety cap (avoid someone committing a gigantic word list)
-          head -n 2000 "$SPELLING_FILE" > /tmp/spelling_additions.txt
-          head -n 2000 "$IGNORE_FILE"   > /tmp/ignore_additions.txt
-
-          mkdir -p /tmp/lt
-          cp /tmp/spelling_additions.txt /tmp/lt/spelling_additions.txt
-          cp /tmp/ignore_additions.txt   /tmp/lt/ignore_additions.txt
-
-          cat > /tmp/lt/Dockerfile <<'EOF'
-          FROM erikvl87/languagetool:latest
-          USER root
-          COPY spelling_additions.txt /tmp/spelling_additions.txt
-          COPY ignore_additions.txt /tmp/ignore_additions.txt
-          RUN set -e; \
-              if [ -s /tmp/spelling_additions.txt ]; then (echo; cat /tmp/spelling_additions.txt) >> org/languagetool/resource/en/hunspell/spelling.txt; fi; \
-              if [ -s /tmp/ignore_additions.txt ]; then (echo; cat /tmp/ignore_additions.txt) >> org/languagetool/resource/en/hunspell/ignore.txt; fi
-          USER languagetool
-          EOF
-
-          docker build -t lt-custom /tmp/lt
+      - name: Setup reviewdog
+        if: steps.meta.outputs.run == 'true'
+        uses: reviewdog/action-setup@v1
+        with:
+          reviewdog_version: latest
 
       - name: Start LanguageTool server
-        shell: bash
+        if: steps.meta.outputs.run == 'true'
         run: |
           set -euo pipefail
-          docker run -d --name languagetool -p 8010:8010 lt-custom
+          docker run -d --rm --name languagetool -p 8010:8010 erikvl87/languagetool:latest
 
-          # Wait until the API is up
-          for i in {1..60}; do
-            if curl -fsS http://127.0.0.1:8010/v2/languages >/dev/null; then
+          # Wait until ready
+          for i in $(seq 1 60); do
+            if curl -fsS "http://localhost:8010/v2/languages" >/dev/null; then
+              echo "LanguageTool is up."
               exit 0
             fi
-            sleep 1
+            sleep 2
           done
 
-          echo "LanguageTool server did not start in time" >&2
+          echo "LanguageTool did not become ready in time" >&2
           docker logs languagetool || true
           exit 1
 
-      - name: Run LanguageTool and comment suggestions on the PR
-        uses: reviewdog/action-languagetool@v1.23.0
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          reporter: github-pr-review
-          level: info
-          patterns: "**/*.md **/*.txt **/*.rst **/*.adoc"
-          language: ${{ env.LT_LANGUAGE }}
-          custom_api_endpoint: "http://127.0.0.1:8010"
+      - name: Run LanguageTool and comment on PR
+        if: steps.meta.outputs.run == 'true'
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python .github/scripts/languagetool_reviewdog.py \
+            --api-url "http://localhost:8010/v2/check" \
+            --language "en-US" \
+            --base-sha "${{ steps.meta.outputs.base_sha }}" \
+            --head-sha "${{ steps.meta.outputs.head_sha }}" \
+            --dictionary ".languagetool/words.txt" \
+          | reviewdog -f=rdjson \
+              -name="LanguageTool" \
+              -reporter="github-pr-review" \
+              -filter-mode="file" \
+              -fail-level="none" \
+              -level="warning"
 
-      - name: Remove rerun label (so maintainers can trigger again)
-        if: github.event.action == 'labeled' && github.event.label.name == 'languagetool:run'
-        continue-on-error: true
+      - name: Remove rerun label (so it can be added again later)
+        if: steps.meta.outputs.run == 'true' && github.event_name == 'pull_request_target' && github.event.action == 'labeled' && github.event.label.name == 'languagetool:rerun'
         uses: actions/github-script@v7
         with:
           script: |
@@ -152,5 +168,9 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.payload.pull_request.number,
-              name: 'languagetool:run',
+              name: "languagetool:rerun",
             });
+
+      - name: Stop LanguageTool
+        if: always() && steps.meta.outputs.run == 'true'
+        run: docker stop languagetool || true
