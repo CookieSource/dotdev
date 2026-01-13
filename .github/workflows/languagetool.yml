@@ -106,7 +106,7 @@ jobs:
 
           echo "LT_JAR=${LT_JAR}" >> "$GITHUB_ENV"
 
-      - name: Run LanguageTool + build PR comment
+      - name: Run LanguageTool + build PR comment (collapsible + exact word)
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -149,13 +149,16 @@ jobs:
               jq -c \
                 --arg file "$f" \
                 --argjson words "$WORDS_JSON" '
-                def badtoken:
+                def bad_raw:
                   (.context.offset // 0) as $o
                   | (.context.length // 0) as $l
                   | (.context.text // "") as $t
-                  | ($t[$o:($o+$l)]
-                     | gsub("^[^[:alnum:]]+|[^[:alnum:]]+$";"")
-                     | ascii_downcase);
+                  | ($t[$o:($o+$l)]);
+
+                def badtoken:
+                  (bad_raw
+                    | gsub("^[^[:alnum:]]+|[^[:alnum:]]+$";"")
+                    | ascii_downcase);
 
                 (.matches // [])
                 | map(
@@ -171,6 +174,7 @@ jobs:
                     | {
                         message: ($m.message // "LanguageTool finding"),
                         rule: $rid,
+                        bad: (bad_raw),
                         replacements: (($m.replacements // []) | map(.value) | .[0:3]),
                         context: ($m.context.text // ""),
                         context_offset: ($m.context.offset // 0),
@@ -182,7 +186,7 @@ jobs:
             done
           fi
 
-          # Build markdown body (stored as a file)
+          # Build markdown body (stored as a file) - collapsible per file
           node <<'NODE'
           const fs = require("fs");
 
@@ -199,7 +203,19 @@ jobs:
           let total = 0;
           for (const f of Object.keys(byFile)) total += byFile[f].length;
 
-          let body = `${marker}
+          function inlineCode(s) {
+            if (s == null) return "";
+            return String(s).replace(/`/g, "\\`").replace(/\n/g, " ").trim();
+          }
+
+          function shortContext(text, maxLen=220) {
+            const t = (text || "").replace(/\s+/g, " ").trim();
+            if (t.length <= maxLen) return t;
+            return t.slice(0, maxLen - 1) + "…";
+          }
+
+          let body =
+          `${marker}
           ## LanguageTool report
 
           **Language:** \`${process.env.LT_LANGUAGE || "en-US"}\`
@@ -214,16 +230,23 @@ jobs:
           } else {
             body += `\n---\n`;
             for (const [file, issues] of Object.entries(byFile)) {
-              body += `\n### ${file}\n`;
+              body += `\n<details>\n<summary><strong>${file}</strong> — ${issues.length} finding(s)</summary>\n\n`;
               for (const it of issues.slice(0, 200)) {
-                const ctx = (it.context || "").replace(/\s+/g, " ").trim();
-                const snippet = ctx ? `\n> ${ctx}\n` : "";
+                const found = inlineCode(it.bad);
+                const ctx = shortContext(it.context);
                 const sug = (it.replacements && it.replacements.length)
-                  ? `\nSuggested: ${it.replacements.map(s => `\`${s}\``).join(", ")}\n`
+                  ? `Suggested: ${it.replacements.map(s => `\`${inlineCode(s)}\``).join(", ")}\n`
                   : "";
-                body += `\n- **${it.rule || "RULE"}**: ${it.message}${sug}${snippet}`;
+                body +=
+          `- **${inlineCode(it.rule || "RULE")}**: ${inlineCode(it.message)}
+            - Found: \`${found}\`
+            - ${sug ? sug.trimEnd() : "Suggested: (none)"}
+            - Context: ${ctx ? `> ${ctx}` : "(none)"}
+
+          `;
               }
-              if (issues.length > 200) body += `\n…(${issues.length - 200} more in this file)\n`;
+              if (issues.length > 200) body += `…(${issues.length - 200} more in this file)\n\n`;
+              body += `</details>\n`;
             }
           }
 
