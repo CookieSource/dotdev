@@ -40,7 +40,7 @@ jobs:
 
           # Adjust file types as you like:
           mapfile -t FILES < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
-            | grep -E '\.(md|rst|txt)$' || true)
+            | grep -E '\.(md|rst|txt|mdx)$' || true)
 
           if [ "${#FILES[@]}" -eq 0 ]; then
             echo "No matching files changed. Skipping."
