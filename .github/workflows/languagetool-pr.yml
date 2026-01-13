@@ -1,180 +1,156 @@
-name: LanguageTool (PR)
+name: LanguageTool (PR review)
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+  # Run once when the PR is opened/re-opened.
+  pull_request_target:
+    types: [opened, reopened, labeled]
+
+  # Allow maintainers to rerun by commenting "/languagetool"
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
   pull-requests: write
+  issues: write
+
+concurrency:
+  group: languagetool-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  LT_LANGUAGE: en-US
+  RERUN_LABEL: languagetool:run
 
 jobs:
-  languagetool:
+  # Comment command -> adds a label -> label event triggers the real run
+  rerun_on_comment:
+    if: |
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/languagetool') &&
+      (github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'OWNER' ||
+       github.event.comment.author_association == 'COLLABORATOR')
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Add rerun label to PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const label = process.env.RERUN_LABEL;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = context.issue.number; // PR number for issue_comment
+
+            // Ensure label exists (create if missing)
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: label });
+            } catch (e) {
+              await github.rest.issues.createLabel({
+                owner,
+                repo,
+                name: label,
+                color: '0e8a16',
+                description: 'Rerun LanguageTool on this PR'
+              });
+            }
+
+            await github.rest.issues.addLabels({
+              owner,
+              repo,
+              issue_number,
+              labels: [label]
+            });
+
+  languagetool:
+    if: |
+      github.event_name == 'pull_request_target' &&
+      (
+        github.event.action == 'opened' ||
+        github.event.action == 'reopened' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'languagetool:run')
+      )
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR (head SHA)
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Download LanguageTool
-        run: |
-          set -euo pipefail
-          LT_VERSION="6.4"
-          curl -fsSL -o LT.zip "https://languagetool.org/download/LanguageTool-${LT_VERSION}.zip"
-          unzip -q LT.zip
-          echo "LT_DIR=LanguageTool-${LT_VERSION}" >> "$GITHUB_ENV"
-
-      - name: Run LanguageTool on changed PR files + comment summary
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      - name: Build LanguageTool server image with custom dictionary
+        shell: bash
         run: |
           set -euo pipefail
 
-          echo "Base: $BASE_SHA"
-          echo "Head: $HEAD_SHA"
+          WORDS_DIR=".github/languagetool"
+          SPELLING_FILE="$WORDS_DIR/spelling.en.txt"
+          IGNORE_FILE="$WORDS_DIR/ignore.en.txt"
 
-          mapfile -t FILES < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
-            | grep -E '\.(md|mdx|rst|txt)$' || true)
+          mkdir -p "$WORDS_DIR"
+          test -f "$SPELLING_FILE" || : > "$SPELLING_FILE"
+          test -f "$IGNORE_FILE"   || : > "$IGNORE_FILE"
 
-          if [ "${#FILES[@]}" -eq 0 ]; then
-            echo "No matching files changed. Skipping."
-            exit 0
-          fi
+          # Safety cap (avoid someone committing a gigantic word list)
+          head -n 2000 "$SPELLING_FILE" > /tmp/spelling_additions.txt
+          head -n 2000 "$IGNORE_FILE"   > /tmp/ignore_additions.txt
 
-          echo "Files to check:"
-          printf ' - %s\n' "${FILES[@]}"
+          mkdir -p /tmp/lt
+          cp /tmp/spelling_additions.txt /tmp/lt/spelling_additions.txt
+          cp /tmp/ignore_additions.txt   /tmp/lt/ignore_additions.txt
 
-          JAR="$(ls -1 "$LT_DIR"/languagetool-commandline.jar)"
-          LANG="en-US"
+          cat > /tmp/lt/Dockerfile <<'EOF'
+          FROM erikvl87/languagetool:latest
+          USER root
+          COPY spelling_additions.txt /tmp/spelling_additions.txt
+          COPY ignore_additions.txt /tmp/ignore_additions.txt
+          RUN set -e; \
+              if [ -s /tmp/spelling_additions.txt ]; then (echo; cat /tmp/spelling_additions.txt) >> org/languagetool/resource/en/hunspell/spelling.txt; fi; \
+              if [ -s /tmp/ignore_additions.txt ]; then (echo; cat /tmp/ignore_additions.txt) >> org/languagetool/resource/en/hunspell/ignore.txt; fi
+          USER languagetool
+          EOF
 
-          # Write a preprocessor script to a file (avoids YAML/heredoc indentation issues)
-          PREPROCESS="$(mktemp)"
-          cat > "$PREPROCESS" <<'PY'
-import re, sys
+          docker build -t lt-custom /tmp/lt
 
-path = sys.argv[1]
-text = open(path, "r", encoding="utf-8", errors="replace").read()
+      - name: Start LanguageTool server
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name languagetool -p 8010:8010 lt-custom
 
-# Remove YAML frontmatter at top
-if text.startswith("---\n"):
-    m = re.match(r"^---\n.*?\n---\n", text, flags=re.S)
-    if m:
-        text = text[m.end():]
-
-# Remove fenced code blocks
-text = re.sub(r"^```.*?$.*?^```.*?$", "\n", text, flags=re.S | re.M)
-
-# Remove inline code spans
-text = re.sub(r"`[^`]*`", " ", text)
-
-# Neutralize path-ish tokens
-text = re.sub(r"\b(?:~?/)?[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)+\b", " PATH ", text)
-
-# Neutralize common filename tokens with extensions
-exts = r"(so|a|o|dylib|dll|exe|bin|iso|img|qcow2|raw|tar|gz|bz2|xz|zip|7z|deb|rpm|jar|war|py|js|ts|jsx|tsx|java|c|cc|cpp|h|hpp|rs|go|rb|php|sh|yaml|yml|toml|json|xml|md|mdx|rst|txt)"
-text = re.sub(rf"\b[A-Za-z0-9._-]+\.(?:{exts})\b", " FILE ", text, flags=re.I)
-
-# Neutralize very long identifier-ish tokens
-text = re.sub(r"\b[A-Za-z][A-Za-z0-9_-]{14,}\b", " IDENT ", text)
-
-text = re.sub(r"[ \t]+", " ", text)
-sys.stdout.write(text)
-PY
-
-          issues=0
-          REPORT_FILE="$(mktemp)"
-          : > "$REPORT_FILE"
-
-          for f in "${FILES[@]}"; do
-            echo "-----"
-            echo "Checking: $f"
-
-            tmp="$(mktemp)"
-
-            # Preprocess; if it fails, fall back to original file (but keep the workflow running)
-            if python3 "$PREPROCESS" "$f" > "$tmp" 2>/dev/null; then
-              :
-            else
-              cp "$f" "$tmp"
+          # Wait until the API is up
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:8010/v2/languages >/dev/null; then
+              exit 0
             fi
-
-            out="$(java -jar "$JAR" -l "$LANG" "$tmp" || true)"
-            rm -f "$tmp"
-
-            if [ -n "$out" ]; then
-              issues=1
-              echo "$out"
-              {
-                echo "FILE: $f"
-                echo "$out"
-                echo
-              } >> "$REPORT_FILE"
-            else
-              echo "OK"
-            fi
+            sleep 1
           done
 
-          rm -f "$PREPROCESS" || true
+          echo "LanguageTool server did not start in time" >&2
+          docker logs languagetool || true
+          exit 1
 
-          # Upsert a single PR comment (marker-based)
-          MARKER="<!-- languagetool-report -->"
-          BODY_FILE="$(mktemp)"
+      - name: Run LanguageTool and comment suggestions on the PR
+        uses: reviewdog/action-languagetool@v1.23.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          reporter: github-pr-review
+          level: info
+          patterns: "**/*.md **/*.txt **/*.rst **/*.adoc"
+          language: ${{ env.LT_LANGUAGE }}
+          custom_api_endpoint: "http://127.0.0.1:8010"
 
-          if [ "$issues" -ne 0 ]; then
-            {
-              echo "$MARKER"
-              echo "### LanguageTool findings"
-              echo
-              echo "_Checked files changed in this PR (frontmatter + fenced code removed; inline code stripped)._"
-              echo
-              echo '```'
-              cat "$REPORT_FILE"
-              echo '```'
-            } > "$BODY_FILE"
-          else
-            {
-              echo "$MARKER"
-              echo "### LanguageTool findings"
-              echo
-              echo "✅ No issues found in changed files."
-            } > "$BODY_FILE"
-          fi
-
-          COMMENTS_JSON="$(mktemp)"
-          gh api "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100 exporting=false" > "$COMMENTS_JSON"
-
-          COMMENT_ID="$(python3 - "$COMMENTS_JSON" <<'PY'
-import json, sys
-data = json.load(open(sys.argv[1], "r", encoding="utf-8"))
-for c in data:
-    if "<!-- languagetool-report -->" in (c.get("body") or ""):
-        print(c["id"])
-        break
-PY
-          )"
-
-          if [ -n "${COMMENT_ID:-}" ]; then
-            gh api -X PATCH "repos/$REPO/issues/comments/$COMMENT_ID" -f body="$(cat "$BODY_FILE")" >/dev/null
-            echo "Updated existing LanguageTool comment."
-          else
-            gh api -X POST "repos/$REPO/issues/$PR_NUMBER/comments" -f body="$(cat "$BODY_FILE")" >/dev/null
-            echo "Posted new LanguageTool comment."
-          fi
-
-          rm -f "$COMMENTS_JSON" "$BODY_FILE" "$REPORT_FILE" || true
-
-          # Fail the check if there were findings (remove this block if you want advisory-only)
-          if [ "$issues" -ne 0 ]; then
-            exit 1
-          fi
+      - name: Remove rerun label (so maintainers can trigger again)
+        if: github.event.action == 'labeled' && github.event.label.name == 'languagetool:run'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.removeLabel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              name: 'languagetool:run',
+            });
