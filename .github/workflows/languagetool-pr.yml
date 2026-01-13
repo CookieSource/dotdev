@@ -1,0 +1,77 @@
+name: LanguageTool (PR)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  languagetool:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Download LanguageTool
+        run: |
+          set -euo pipefail
+          LT_VERSION="6.4"
+          curl -fsSL -o LT.zip "https://languagetool.org/download/LanguageTool-${LT_VERSION}.zip"
+          unzip -q LT.zip
+          echo "LT_DIR=LanguageTool-${LT_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Run LanguageTool on changed files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          echo "Base: $BASE_SHA"
+          echo "Head: $HEAD_SHA"
+
+          # Adjust file types as you like:
+          mapfile -t FILES < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
+            | grep -E '\.(md|rst|txt)$' || true)
+
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "No matching files changed. Skipping."
+            exit 0
+          fi
+
+          echo "Files to check:"
+          printf ' - %s\n' "${FILES[@]}"
+
+          JAR="$(ls -1 "$LT_DIR"/languagetool-commandline.jar)"
+
+          # Pick your language here:
+          LANG="en-US"
+
+          issues=0
+          for f in "${FILES[@]}"; do
+            echo "-----"
+            echo "Checking: $f"
+            # LanguageTool returns 0 even with matches, so we count output ourselves.
+            out="$(java -jar "$JAR" -l "$LANG" "$f" || true)"
+            if [ -n "$out" ]; then
+              issues=1
+              echo "$out"
+            else
+              echo "OK"
+            fi
+          done
+
+          if [ "$issues" -ne 0 ]; then
+            echo "LanguageTool found issues."
+            exit 1
+          fi
+
+          echo "No LanguageTool issues found."
