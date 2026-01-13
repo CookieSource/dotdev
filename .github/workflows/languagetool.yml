@@ -1,3 +1,4 @@
+# .github/workflows/languagetool.yml
 name: LanguageTool (PR comment)
 
 on:
@@ -20,7 +21,7 @@ env:
   RERUN_LABEL: languagetool:rerun
 
 jobs:
-  # Comment command -> toggle a label to trigger the PR job
+  # Comment command -> toggles a label to trigger the PR job
   rerun_on_comment:
     if: |
       github.event_name == 'issue_comment' &&
@@ -40,7 +41,7 @@ jobs:
             const issue_number = context.issue.number;
             const label = process.env.RERUN_LABEL;
 
-            // ensure label exists
+            // Ensure label exists
             try {
               await github.rest.issues.getLabel({ owner, repo, name: label });
             } catch {
@@ -50,8 +51,10 @@ jobs:
               });
             }
 
-            // remove if present (ignore if missing), then add to force a "labeled" event
-            try { await github.rest.issues.removeLabel({ owner, repo, issue_number, name: label }); } catch {}
+            // Remove if present (ignore errors), then add to force a new "labeled" event
+            try {
+              await github.rest.issues.removeLabel({ owner, repo, issue_number, name: label });
+            } catch {}
             await github.rest.issues.addLabels({ owner, repo, issue_number, labels: [label] });
 
   languagetool:
@@ -86,32 +89,36 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Download LanguageTool snapshot (CLI)
+      - name: Download LanguageTool CLI (latest snapshot)
         run: |
           set -euo pipefail
           curl -fsSL -o lt.zip "https://internal1.languagetool.org/snapshots/LanguageTool-latest-snapshot.zip"
           rm -rf .lt
           mkdir -p .lt
           unzip -q lt.zip -d .lt
-          # locate the command line jar
+
           LT_JAR="$(ls -1 .lt/**/languagetool-commandline.jar 2>/dev/null | head -n1 || true)"
           if [ -z "${LT_JAR}" ]; then
             echo "Could not find languagetool-commandline.jar in snapshot" >&2
-            find .lt -maxdepth 3 -type f -name "*languagetool*jar" -print >&2 || true
+            find .lt -maxdepth 4 -type f -name "*languagetool*jar" -print >&2 || true
             exit 1
           fi
+
           echo "LT_JAR=${LT_JAR}" >> "$GITHUB_ENV"
 
-      - name: Run LanguageTool on changed text files and build PR comment
+      - name: Run LanguageTool + build PR comment
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
 
-          # Choose which files to check (edit this regex to include more types)
+          # jq is present on ubuntu-latest, but install if your runner image differs
+          command -v jq >/dev/null || (sudo apt-get update && sudo apt-get install -y jq)
+
+          # Choose files to check
           mapfile -t FILES < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
-            | grep -E '\.(md|txt|rst|adoc|asciidoc|tex|mdx)$' || true)
+            | grep -E '\.(md|mdx|txt|rst|adoc|asciidoc|tex)$' || true)
 
           # Load custom words (optional)
           WORDS_FILE=".languagetool/words.txt"
@@ -134,19 +141,21 @@ jobs:
             for f in "${FILES[@]}"; do
               [ -f "$f" ] || continue
 
-              # LT prints banner lines before JSON sometimes; keep JSON only
+              # LT can print banner lines; keep JSON only (accepts either { or [)
               java -jar "$LT_JAR" -l "${LT_LANGUAGE}" --json "$f" 2>/dev/null \
-                | sed -n '/^{/,$p' > lt.json || true
+                | sed -n '/^[{[]/,$p' > lt.json || true
 
               # Extract issues and filter spelling-ish matches for custom words
               jq -c \
                 --arg file "$f" \
                 --argjson words "$WORDS_JSON" '
                 def badtoken:
-                  (.context.text
-                    | .[.context.offset:(.context.offset + .context.length)]
-                    | gsub("^[^[:alnum:]]+|[^[:alnum:]]+$";"")
-                    | ascii_downcase);
+                  (.context.offset // 0) as $o
+                  | (.context.length // 0) as $l
+                  | (.context.text // "") as $t
+                  | ($t[$o:($o+$l)]
+                     | gsub("^[^[:alnum:]]+|[^[:alnum:]]+$";"")
+                     | ascii_downcase);
 
                 (.matches // [])
                 | map(
@@ -155,7 +164,6 @@ jobs:
                     | ($m.rule.category.id // "") as $cat
                     | (badtoken) as $bt
                     | select(
-                        # drop spelling-ish warnings when the token is in our custom list
                         ( (( $cat == "TYPOS") or ($rid|test("MORFOLOGIK";"i")) )
                           and (($words|index($bt)) != null)
                         ) | not
@@ -179,12 +187,11 @@ jobs:
           const fs = require("fs");
 
           const marker = "<!-- languagetool-report -->";
-          const lines = fs.readFileSync("results.jsonl","utf8").trim().split("\n").filter(Boolean);
+          const raw = fs.readFileSync("results.jsonl","utf8").trim();
+          const lines = raw ? raw.split("\n").filter(Boolean) : [];
           const parsed = lines.map(l => JSON.parse(l));
 
-          const checkedFiles = parsed
-            .map(p => p.file)
-            .filter(f => f && f !== "(none)");
+          const checkedFiles = parsed.map(p => p.file).filter(f => f && f !== "(none)");
           const byFile = parsed
             .filter(p => Array.isArray(p.issues) && p.issues.length > 0)
             .reduce((acc, p) => { acc[p.file] = p.issues; return acc; }, {});
@@ -196,19 +203,19 @@ jobs:
           ## LanguageTool report
 
           **Language:** \`${process.env.LT_LANGUAGE || "en-US"}\`
-          **Checked files:** ${checkedFiles.length ? checkedFiles.length : 0}
+          **Checked files:** ${checkedFiles.length}
           **Findings:** ${total}
           `;
 
           if (!checkedFiles.length) {
-            body += `\nNo supported text files changed in this PR (based on the file extensions configured).\n`;
+            body += `\nNo supported text files changed in this PR (based on configured extensions).\n`;
           } else if (total === 0) {
             body += `\n✅ No issues found in the changed text files.\n`;
           } else {
             body += `\n---\n`;
             for (const [file, issues] of Object.entries(byFile)) {
               body += `\n### ${file}\n`;
-              for (const it of issues.slice(0, 200)) { // cap to avoid huge comments
+              for (const it of issues.slice(0, 200)) {
                 const ctx = (it.context || "").replace(/\s+/g, " ").trim();
                 const snippet = ctx ? `\n> ${ctx}\n` : "";
                 const sug = (it.replacements && it.replacements.length)
