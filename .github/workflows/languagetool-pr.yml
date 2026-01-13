@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   languagetool:
     runs-on: ubuntu-latest
@@ -28,17 +32,19 @@ jobs:
           unzip -q LT.zip
           echo "LT_DIR=LanguageTool-${LT_VERSION}" >> "$GITHUB_ENV"
 
-      - name: Run LanguageTool on changed PR files (cleaned)
+      - name: Run LanguageTool on changed PR files + comment summary
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
           echo "Base: $BASE_SHA"
           echo "Head: $HEAD_SHA"
 
-          # File types to check (add/remove as needed)
           mapfile -t FILES < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
             | grep -E '\.(md|mdx|rst|txt)$' || true)
 
@@ -54,6 +60,8 @@ jobs:
           LANG="en-US"
 
           issues=0
+          REPORT_FILE="$(mktemp)"
+          : > "$REPORT_FILE"
 
           for f in "${FILES[@]}"; do
             echo "-----"
@@ -61,39 +69,98 @@ jobs:
 
             tmp="$(mktemp)"
 
-            # Keep "nearly all" errors but remove the biggest source of noise:
-            # - YAML frontmatter at top of file (--- ... ---)
-            # - fenced code blocks (``` ... ```)
-            #
-            # Everything else is checked (including normal prose in MDX).
-            awk '
-              BEGIN { fm=0; code=0; }
-              NR==1 && $0=="---" { fm=1; next }
-              fm==1 && $0=="---" { fm=0; next }
-              fm==1 { next }
+            # Robust preprocessing (won't fail the job if it errors; falls back to original file)
+            if ! python3 - "$f" > "$tmp" 2>/dev/null << 'PY'
+import re, sys
+path = sys.argv[1]
+text = open(path, "r", encoding="utf-8", errors="replace").read()
 
-              /^```/ { code = !code; next }
-              code==1 { next }
+# Remove YAML frontmatter at top
+if text.startswith("---\n"):
+  m = re.match(r"^---\n.*?\n---\n", text, flags=re.S)
+  if m:
+    text = text[m.end():]
 
-              { print }
-            ' "$f" > "$tmp"
+# Remove fenced code blocks
+text = re.sub(r"^```.*?$.*?^```.*?$", "\n", text, flags=re.S | re.M)
 
-            # LanguageTool CLI prints findings to stdout; it typically exits 0 even with findings,
-            # so we detect findings by whether output is non-empty.
+# Remove inline code spans
+text = re.sub(r"`[^`]*`", " ", text)
+
+# Neutralize common technical tokens (paths, filenames/exts, long identifiers)
+text = re.sub(r"\b(?:~?/)?[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)+\b", " PATH ", text)
+
+exts = r"(so|a|o|dylib|dll|exe|bin|iso|img|qcow2|raw|tar|gz|bz2|xz|zip|7z|deb|rpm|jar|war|py|js|ts|jsx|tsx|java|c|cc|cpp|h|hpp|rs|go|rb|php|sh|yaml|yml|toml|json|xml|md|mdx|rst|txt)"
+text = re.sub(rf"\b[A-Za-z0-9._-]+\.(?:{exts})\b", " FILE ", text, flags=re.I)
+
+text = re.sub(r"\b[A-Za-z][A-Za-z0-9_-]{14,}\b", " IDENT ", text)
+
+text = re.sub(r"[ \t]+", " ", text)
+sys.stdout.write(text)
+PY
+            then
+              cp "$f" "$tmp"
+            fi
+
             out="$(java -jar "$JAR" -l "$LANG" "$tmp" || true)"
             rm -f "$tmp"
 
             if [ -n "$out" ]; then
               issues=1
               echo "$out"
+              {
+                echo "FILE: $f"
+                echo "$out"
+                echo
+              } >> "$REPORT_FILE"
             else
               echo "OK"
             fi
           done
 
+          # Build PR comment body (upsert by marker)
+          MARKER="<!-- languagetool-report -->"
+
           if [ "$issues" -ne 0 ]; then
-            echo "LanguageTool found issues."
-            exit 1
+            BODY_FILE="$(mktemp)"
+            {
+              echo "$MARKER"
+              echo "### LanguageTool findings"
+              echo
+              echo "_Checked files changed in this PR (frontmatter + code blocks removed; inline code stripped)._"
+              echo
+              echo '```'
+              cat "$REPORT_FILE"
+              echo '```'
+            } > "$BODY_FILE"
+
+            # Find existing comment with marker (if any) and update it; otherwise create a new one
+            COMMENTS_JSON="$(mktemp)"
+            gh api "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100" > "$COMMENTS_JSON"
+
+            COMMENT_ID="$(python3 - << 'PY'
+import json, sys
+data = json.load(open(sys.argv[1], "r", encoding="utf-8"))
+for c in data:
+  if "<!-- languagetool-report -->" in (c.get("body") or ""):
+    print(c["id"])
+    break
+PY
+            "$COMMENTS_JSON")"
+
+            if [ -n "${COMMENT_ID:-}" ]; then
+              gh api -X PATCH "repos/$REPO/issues/comments/$COMMENT_ID" -f body="$(cat "$BODY_FILE")" >/dev/null
+              echo "Updated existing LanguageTool comment."
+            else
+              gh api -X POST "repos/$REPO/issues/$PR_NUMBER/comments" -f body="$(cat "$BODY_FILE")" >/dev/null
+              echo "Posted new LanguageTool comment."
+            fi
+          else
+            echo "No LanguageTool issues found."
           fi
 
-          echo "No LanguageTool issues found."
+          rm -f "$REPORT_FILE" || true
+
+          if [ "$issues" -ne 0 ]; then
+            exit 1
+          fi
