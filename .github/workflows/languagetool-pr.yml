@@ -28,7 +28,7 @@ jobs:
           unzip -q LT.zip
           echo "LT_DIR=LanguageTool-${LT_VERSION}" >> "$GITHUB_ENV"
 
-      - name: Run LanguageTool on changed files
+      - name: Run LanguageTool on changed PR files (cleaned)
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -38,9 +38,9 @@ jobs:
           echo "Base: $BASE_SHA"
           echo "Head: $HEAD_SHA"
 
-          # Adjust file types as you like:
+          # File types to check (add/remove as needed)
           mapfile -t FILES < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
-            | grep -E '\.(md|rst|txt|mdx)$' || true)
+            | grep -E '\.(md|mdx|rst|txt)$' || true)
 
           if [ "${#FILES[@]}" -eq 0 ]; then
             echo "No matching files changed. Skipping."
@@ -51,16 +51,38 @@ jobs:
           printf ' - %s\n' "${FILES[@]}"
 
           JAR="$(ls -1 "$LT_DIR"/languagetool-commandline.jar)"
-
-          # Pick your language here:
           LANG="en-US"
 
           issues=0
+
           for f in "${FILES[@]}"; do
             echo "-----"
             echo "Checking: $f"
-            # LanguageTool returns 0 even with matches, so we count output ourselves.
-            out="$(java -jar "$JAR" -l "$LANG" "$f" || true)"
+
+            tmp="$(mktemp)"
+
+            # Keep "nearly all" errors but remove the biggest source of noise:
+            # - YAML frontmatter at top of file (--- ... ---)
+            # - fenced code blocks (``` ... ```)
+            #
+            # Everything else is checked (including normal prose in MDX).
+            awk '
+              BEGIN { fm=0; code=0; }
+              NR==1 && $0=="---" { fm=1; next }
+              fm==1 && $0=="---" { fm=0; next }
+              fm==1 { next }
+
+              /^```/ { code = !code; next }
+              code==1 { next }
+
+              { print }
+            ' "$f" > "$tmp"
+
+            # LanguageTool CLI prints findings to stdout; it typically exits 0 even with findings,
+            # so we detect findings by whether output is non-empty.
+            out="$(java -jar "$JAR" -l "$LANG" "$tmp" || true)"
+            rm -f "$tmp"
+
             if [ -n "$out" ]; then
               issues=1
               echo "$out"
