@@ -1,10 +1,8 @@
-name: LanguageTool
+name: LanguageTool (PR)
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  push:
-    branches: ["**"]
 
 permissions:
   contents: read
@@ -13,7 +11,6 @@ permissions:
 jobs:
   languagetool:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,35 +31,20 @@ jobs:
           unzip -q LT.zip
           echo "LT_DIR=LanguageTool-${LT_VERSION}" >> "$GITHUB_ENV"
 
-      - name: Run LanguageTool (changed files) and comment on PR
+      - name: Run LanguageTool on changed PR files + comment summary
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
 
-          # Only comment when this run is for a PR event
-          IS_PR=0
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            IS_PR=1
-          fi
+          echo "Base: $BASE_SHA"
+          echo "Head: $HEAD_SHA"
 
-          if [ "$IS_PR" -eq 1 ]; then
-            echo "Base: $BASE_SHA"
-            echo "Head: $HEAD_SHA"
-            DIFF_BASE="$BASE_SHA"
-            DIFF_HEAD="$HEAD_SHA"
-          else
-            echo "Push run: comparing against previous commit"
-            DIFF_BASE="${GITHUB_SHA}^"
-            DIFF_HEAD="${GITHUB_SHA}"
-          fi
-
-          mapfile -t FILES < <(git diff --name-only "$DIFF_BASE" "$DIFF_HEAD" \
+          mapfile -t FILES < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
             | grep -E '\.(md|mdx|rst|txt)$' || true)
 
           if [ "${#FILES[@]}" -eq 0 ]; then
@@ -76,19 +58,11 @@ jobs:
           JAR="$(ls -1 "$LT_DIR"/languagetool-commandline.jar)"
           LANG="en-US"
 
-          issues=0
-          REPORT_FILE="$(mktemp)"
-          : > "$REPORT_FILE"
-
-          for f in "${FILES[@]}"; do
-            echo "-----"
-            echo "Checking: $f"
-
-            tmp="$(mktemp)"
-
-            # Preprocess with Python. If preprocessing fails, fall back to the original file.
-            if python3 - "$f" > "$tmp" 2>/dev/null <<'PY'
+          # Write a preprocessor script to a file (avoids YAML/heredoc indentation issues)
+          PREPROCESS="$(mktemp)"
+          cat > "$PREPROCESS" <<'PY'
 import re, sys
+
 path = sys.argv[1]
 text = open(path, "r", encoding="utf-8", errors="replace").read()
 
@@ -117,7 +91,19 @@ text = re.sub(r"\b[A-Za-z][A-Za-z0-9_-]{14,}\b", " IDENT ", text)
 text = re.sub(r"[ \t]+", " ", text)
 sys.stdout.write(text)
 PY
-            then
+
+          issues=0
+          REPORT_FILE="$(mktemp)"
+          : > "$REPORT_FILE"
+
+          for f in "${FILES[@]}"; do
+            echo "-----"
+            echo "Checking: $f"
+
+            tmp="$(mktemp)"
+
+            # Preprocess; if it fails, fall back to original file (but keep the workflow running)
+            if python3 "$PREPROCESS" "$f" > "$tmp" 2>/dev/null; then
               :
             else
               cp "$f" "$tmp"
@@ -139,35 +125,36 @@ PY
             fi
           done
 
-          # If PR: upsert a single comment with a marker
-          if [ "$IS_PR" -eq 1 ]; then
-            MARKER="<!-- languagetool-report -->"
-            BODY_FILE="$(mktemp)"
+          rm -f "$PREPROCESS" || true
 
-            if [ "$issues" -ne 0 ]; then
-              {
-                echo "$MARKER"
-                echo "### LanguageTool findings"
-                echo
-                echo "_Checked files changed in this PR (frontmatter + fenced code removed; inline code stripped)._"
-                echo
-                echo '```'
-                cat "$REPORT_FILE"
-                echo '```'
-              } > "$BODY_FILE"
-            else
-              {
-                echo "$MARKER"
-                echo "### LanguageTool findings"
-                echo
-                echo "✅ No issues found in changed files."
-              } > "$BODY_FILE"
-            fi
+          # Upsert a single PR comment (marker-based)
+          MARKER="<!-- languagetool-report -->"
+          BODY_FILE="$(mktemp)"
 
-            COMMENTS_JSON="$(mktemp)"
-            gh api "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100" > "$COMMENTS_JSON"
+          if [ "$issues" -ne 0 ]; then
+            {
+              echo "$MARKER"
+              echo "### LanguageTool findings"
+              echo
+              echo "_Checked files changed in this PR (frontmatter + fenced code removed; inline code stripped)._"
+              echo
+              echo '```'
+              cat "$REPORT_FILE"
+              echo '```'
+            } > "$BODY_FILE"
+          else
+            {
+              echo "$MARKER"
+              echo "### LanguageTool findings"
+              echo
+              echo "✅ No issues found in changed files."
+            } > "$BODY_FILE"
+          fi
 
-            COMMENT_ID="$(python3 - "$COMMENTS_JSON" <<'PY'
+          COMMENTS_JSON="$(mktemp)"
+          gh api "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100 exporting=false" > "$COMMENTS_JSON"
+
+          COMMENT_ID="$(python3 - "$COMMENTS_JSON" <<'PY'
 import json, sys
 data = json.load(open(sys.argv[1], "r", encoding="utf-8"))
 for c in data:
@@ -175,17 +162,19 @@ for c in data:
         print(c["id"])
         break
 PY
-            )"
+          )"
 
-            if [ -n "${COMMENT_ID:-}" ]; then
-              gh api -X PATCH "repos/$REPO/issues/comments/$COMMENT_ID" -f body="$(cat "$BODY_FILE")" >/dev/null
-              echo "Updated existing LanguageTool comment."
-            else
-              gh api -X POST "repos/$REPO/issues/$PR_NUMBER/comments" -f body="$(cat "$BODY_FILE")" >/dev/null
-              echo "Posted new LanguageTool comment."
-            fi
+          if [ -n "${COMMENT_ID:-}" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$COMMENT_ID" -f body="$(cat "$BODY_FILE")" >/dev/null
+            echo "Updated existing LanguageTool comment."
+          else
+            gh api -X POST "repos/$REPO/issues/$PR_NUMBER/comments" -f body="$(cat "$BODY_FILE")" >/dev/null
+            echo "Posted new LanguageTool comment."
           fi
 
+          rm -f "$COMMENTS_JSON" "$BODY_FILE" "$REPORT_FILE" || true
+
+          # Fail the check if there were findings (remove this block if you want advisory-only)
           if [ "$issues" -ne 0 ]; then
             exit 1
           fi
