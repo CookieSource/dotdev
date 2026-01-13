@@ -111,7 +111,7 @@ jobs:
 
           # Choose which files to check (edit this regex to include more types)
           mapfile -t FILES < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
-            | grep -E '\.(md|txt|rst|adoc|asciidoc|tex)$' || true)
+            | grep -E '\.(md|txt|rst|adoc|asciidoc|tex|mdx)$' || true)
 
           # Load custom words (optional)
           WORDS_FILE=".languagetool/words.txt"
