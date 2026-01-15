@@ -7,7 +7,7 @@ updates:
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     allow:
       - dependency-name: "astro"
       - dependency-name: "@astrojs/starlight"
