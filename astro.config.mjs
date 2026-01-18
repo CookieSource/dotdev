@@ -8,6 +8,7 @@ import { brainDbAstro } from "@braindb/astro";
 import rehypeExternalLinks from "rehype-external-links";
 import starlightLlmsTxt from "starlight-llms-txt";
 import starlightSidebarSwipe from "starlight-sidebar-swipe";
+import starlightTags from "starlight-tags";
 
 // https://astro.build/config
 export default defineConfig({
@@ -78,10 +79,17 @@ export default defineConfig({
         LastUpdated: "./src/components/LastUpdated.astro",
         Head: "./src/components/Head.astro",
         TableOfContents: "./src/components/TableOfContents.astro",
+        Sidebar: "./src/components/Sidebar.astro",
       },
       plugins: [
+        starlightLlmsTxt({
+          projectName: "AerynOS Docs",
+          description: "Documentation for all projects under the AerynOS umbrella.",
+          details:
+            "Notes:\n\n- If you put `.md` after any link you get the Markdown version.\n- There is a PDF at `/aerynos.pdf`.",
+        }),
+        starlightTags(),
         starlightLinksValidator(),
-        starlightLlmsTxt(),
         starlightSidebarSwipe(),
         starlightScrollToTop({
           position: "right",
