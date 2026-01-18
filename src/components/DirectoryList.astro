@@ -13,11 +13,12 @@ import type {
   SidebarLink,
 } from "node_modules/@astrojs/starlight/utils/routing/types";
 
-let sidebar: SidebarEntry[] | undefined;
+// starlightRoute is not available when rendering non-Starlight pages (e.g. llms.txt).
+let sidebar: SidebarEntry[] = [];
 try {
-  sidebar = Astro.locals.starlightRoute?.sidebar;
+  sidebar = Astro.locals.starlightRoute?.sidebar ?? [];
 } catch {
-  sidebar = undefined;
+  sidebar = [];
 }
 
 let docs = await getCollection("docs");
@@ -80,23 +81,21 @@ function sidebarLinks(path: string, sidebar: SidebarEntry[]): SidebarLink[] {
   });
 }
 
-let links = sidebar
-  ? sidebarLinks(Astro.url.pathname, sidebar).map((item) => {
-      let page = docs.find(docMatchesHref(item.href));
-      if (page) {
-        return {
-          href: item.href,
-          label: item.label,
-          description: page.data.description,
-        };
-      }
-      return {
-        href: item.href,
-        label: item.label,
-        description: null,
-      };
-    })
-  : [];
+let links = sidebarLinks(Astro.url.pathname, sidebar).map((item) => {
+  let page = docs.find(docMatchesHref(item.href));
+  if (page) {
+    return {
+      href: item.href,
+      label: item.label,
+      description: page.data.description,
+    };
+  }
+  return {
+    href: item.href,
+    label: item.label,
+    description: null,
+  };
+});
 ---
 
 {links.length > 0 && (

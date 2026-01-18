@@ -1,31 +1,85 @@
 tags:
-  aerynos:
-    label: "AerynOS"
-    description: "Project overview and philosophy"
-  users:
-    label: "Users"
-    description: "End-user documentation and system usage"
-  getting-started:
-    label: "Getting Started"
-    description: "Install and first steps"
-  desktops:
-    label: "Desktops"
-    description: "Desktop environments and window managers"
-  packaging:
-    label: "Packaging"
-    description: "Packaging workflows and recipes"
-  workflow:
-    label: "Workflow"
-    description: "Packaging workflows and contributor steps"
-  recipes:
-    label: "Recipes"
-    description: "Recipe format and packaging metadata"
+  automation:
+    label: "Automation"
+    description: "Automated system actions and triggers"
+  concepts:
+    label: "Concepts"
+    description: "Core concepts and philosophy"
+  configuration:
+    label: "Configuration"
+    description: "Configuration guides and references"
+  contributing:
+    label: "Contributing"
+    description: "Contribution guidelines"
+  dependencies:
+    label: "Dependencies"
+    description: "Build and runtime dependencies"
   developers:
     label: "Developers"
-    description: "Developer documentation and tools"
+    description: "Developer documentation"
+  documentation:
+    label: "Documentation"
+    description: "Documentation and guides"
+  faq:
+    label: "FAQ"
+    description: "Frequently asked questions"
+  getting-started:
+    label: "Getting Started"
+    description: "First steps and installation"
+  install:
+    label: "Install"
+    description: "Installation and setup"
+  metadata:
+    label: "Metadata"
+    description: "Recipe metadata and definitions"
+  moss:
+    label: "Moss"
+    description: "Moss state management"
   overview:
     label: "Overview"
-    description: "High-level introductions and summaries"
+    description: "High-level overviews"
+  packaging:
+    label: "Packaging"
+    description: "Packaging system docs"
+  packaging-format:
+    label: "Packaging Format"
+    description: "Packaging formats and specifications"
+  philosophy:
+    label: "Philosophy"
+    description: "Project philosophy"
+  prerequisites:
+    label: "Prerequisites"
+    description: "Prerequisites and requirements"
+  project:
+    label: "Project"
+    description: "Project overview"
+  recipes:
+    label: "Recipes"
+    description: "Packaging recipes"
+  reference:
+    label: "Reference"
+    description: "Reference material"
+  system:
+    label: "System"
+    description: "System-level topics"
+  system-management:
+    label: "System Management"
+    description: "System management and operations"
+  troubleshooting:
+    label: "Troubleshooting"
+    description: "Troubleshooting guidance"
+  upstreams:
+    label: "Upstreams"
+    description: "Upstream sources and policies"
+  user-accounts:
+    label: "User Accounts"
+    description: "User and group accounts"
+  users:
+    label: "Users"
+    description: "End-user documentation"
+  workflow:
+    label: "Workflow"
+    description: "Workflows and processes"
 
 defaults:
   color: "#6b7280"
