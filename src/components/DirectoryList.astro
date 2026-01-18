@@ -12,7 +12,14 @@ import type {
   SidebarGroup,
   SidebarLink,
 } from "node_modules/@astrojs/starlight/utils/routing/types";
-const { sidebar } = Astro.locals.starlightRoute;
+
+// starlightRoute is not available when rendering non-Starlight pages (e.g. llms.txt).
+let sidebar: SidebarEntry[] = [];
+try {
+  sidebar = Astro.locals.starlightRoute?.sidebar ?? [];
+} catch {
+  sidebar = [];
+}
 
 let docs = await getCollection("docs");
 

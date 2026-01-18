@@ -1,7 +1,16 @@
 ---
 import { REPO, getCommitInfo } from "@/utils/git";
 
-const { lang, lastUpdated, entry } = Astro.locals.starlightRoute;
+let lang;
+let lastUpdated;
+let entry;
+try {
+  ({ lang, lastUpdated, entry } = Astro.locals.starlightRoute);
+} catch {
+  lang = undefined;
+  lastUpdated = undefined;
+  entry = undefined;
+}
 const filePath = entry?.filePath;
 
 const info = filePath ? await getCommitInfo(filePath) : null;
