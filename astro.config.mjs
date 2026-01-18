@@ -4,6 +4,8 @@ import starlight from "@astrojs/starlight";
 import starlightLinksValidator from "starlight-links-validator";
 import starlightScrollToTop from "starlight-scroll-to-top";
 import starlightKbd from "starlight-kbd";
+import starlightLlmsTxt from "starlight-llms-txt";
+import starlightTags from "starlight-tags";
 
 // https://astro.build/config
 export default defineConfig({
@@ -55,8 +57,16 @@ export default defineConfig({
       lastUpdated: true,
       components: {
         LastUpdated: "./src/components/LastUpdated.astro",
+        Sidebar: "./src/components/Sidebar.astro",
       },
       plugins: [
+        starlightLlmsTxt({
+          projectName: "AerynOS Docs",
+          description: "Documentation for all projects under the AerynOS umbrella.",
+          details:
+            "Notes:\n\n- If you put `.md` after any link you get the Markdown version.\n- There is a PDF at `/aerynos.pdf`.",
+        }),
+        starlightTags(),
         starlightLinksValidator(),
         starlightScrollToTop({
           position: "right",

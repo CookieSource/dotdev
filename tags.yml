@@ -1,0 +1,31 @@
+tags:
+  aerynos:
+    label: "AerynOS"
+    description: "Project overview and philosophy"
+  users:
+    label: "Users"
+    description: "End-user documentation and system usage"
+  getting-started:
+    label: "Getting Started"
+    description: "Install and first steps"
+  desktops:
+    label: "Desktops"
+    description: "Desktop environments and window managers"
+  packaging:
+    label: "Packaging"
+    description: "Packaging workflows and recipes"
+  workflow:
+    label: "Workflow"
+    description: "Packaging workflows and contributor steps"
+  recipes:
+    label: "Recipes"
+    description: "Recipe format and packaging metadata"
+  developers:
+    label: "Developers"
+    description: "Developer documentation and tools"
+  overview:
+    label: "Overview"
+    description: "High-level introductions and summaries"
+
+defaults:
+  color: "#6b7280"
