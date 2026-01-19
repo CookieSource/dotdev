@@ -1,16 +1,84 @@
-name: reviewdog
-on: [pull_request]
+name: Harper (grammar suggestions)
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
-  linter_name:
-    name: LanguageTool grammar check
+  harper:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: reviewdog/action-languagetool@ea19c757470ce0dbfcbc34aec090317cef1ff0b5 # v1.22.0
+      - uses: actions/checkout@v4
         with:
-          github_token: ${{ secrets.github_token }}
-          # Change reviewdog reporter if you need [github-pr-check,github-check,github-pr-review].
-          reporter: github-pr-review
-          # Change reporter level if you need.
-          level: info
-          patterns: "**/*.md **/*.mdx **/*.txt"
+          fetch-depth: 0
+
+      - name: Install Harper
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/automattic/harper/main/install.sh | sh
+          echo "$HOME/.harper/bin" >> $GITHUB_PATH
+
+      - name: Run Harper on changed md/mdx
+        id: harper
+        run: |
+          set -euo pipefail
+
+          mapfile -t FILES < <(
+            git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }} \
+            -- '*.md' '*.mdx' || true
+          )
+
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "No markdown files changed." > harper.txt
+            exit 0
+          fi
+
+          {
+            echo "## Harper grammar suggestions"
+            echo
+            for f in "${FILES[@]}"; do
+              [ -f "$f" ] || continue
+              echo "### $f"
+              harper "$f" || true
+              echo
+            done
+          } > harper.txt
+
+      - name: Post PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const body = fs.readFileSync("harper.txt", "utf8").trim();
+
+            const marker = "<!-- harper-report -->";
+            const commentBody = `${marker}\n${body || "No issues found."}`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(c =>
+              c.body && c.body.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: commentBody,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody,
+              });
+            }
