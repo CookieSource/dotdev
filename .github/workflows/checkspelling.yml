@@ -1,4 +1,3 @@
-# .github/workflows/grammar.yml
 name: Grammar Check (PR Changes Only)
 
 on:
@@ -7,6 +6,7 @@ on:
 jobs:
   grammar:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v3
 
@@ -18,9 +18,9 @@ jobs:
             **/*.md
             **/*.mdx
 
-      - name: Skip if no docs changed
+      - name: Skip if no .md/.mdx files changed
         if: steps.changed.outputs.any_changed != 'true'
-        run: echo "No .md or .mdx files changed."
+        run: echo "No markdown or MDX files changed."
 
       - name: Set up Node
         if: steps.changed.outputs.any_changed == 'true'
@@ -28,13 +28,18 @@ jobs:
         with:
           node-version: 18
 
-      - name: Install MDX cleaner
+      - name: Install MDX cleaner dependencies
+        if: steps.changed.outputs.any_changed == 'true'
+        run: npm install remark remark-mdx strip-markdown
+
+      - name: Extract prose from changed docs
         if: steps.changed.outputs.any_changed == 'true'
         run: |
-          npm install remark remark-mdx strip-markdown
           mkdir -p dist
           for file in ${{ steps.changed.outputs.all_changed_files }}; do
-            node scripts/clean-mdx.js "$file" > "dist/${file//\//_}.txt"
+            if [[ "$file" == *.md || "$file" == *.mdx ]]; then
+              node .github/scripts/clean-mdx.js "$file" > "dist/${file//\//_}.txt"
+            fi
           done
 
       - name: Download LanguageTool CLI
