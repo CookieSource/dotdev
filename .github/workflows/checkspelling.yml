@@ -49,6 +49,10 @@ jobs:
           unzip lt.zip
           echo "LT_PATH=$(pwd)/LanguageTool-*/languagetool-commandline.jar" >> $GITHUB_ENV
 
+      - name: Install reviewdog
+        if: steps.changed.outputs.any_changed == 'true'
+        uses: reviewdog/action-install@v1
+
       - name: Run LanguageTool with reviewdog
         if: steps.changed.outputs.any_changed == 'true'
         env:
