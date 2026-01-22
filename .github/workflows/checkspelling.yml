@@ -28,9 +28,10 @@ jobs:
         with:
           node-version: 18
 
-      - name: Install MDX cleaner dependencies
+      - name: Install dependencies for MDX and parser
         if: steps.changed.outputs.any_changed == 'true'
-        run: npm install remark remark-mdx strip-markdown
+        run: |
+          npm install remark remark-mdx strip-markdown
 
       - name: Extract prose from changed docs
         if: steps.changed.outputs.any_changed == 'true'
@@ -51,15 +52,17 @@ jobs:
 
       - name: Install reviewdog
         if: steps.changed.outputs.any_changed == 'true'
-        uses: reviewdog/action-setup@v1 
-        
-      - name: Run LanguageTool with reviewdog
+        uses: reviewdog/action-setup@v1
+
+      - name: Run LanguageTool and parse to reviewdog format
         if: steps.changed.outputs.any_changed == 'true'
         env:
           REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           for f in dist/*.txt; do
-            java -jar $LT_PATH -l en-US "$f" |
+            OUT="dist/$(basename "$f").json"
+            java -jar $LT_PATH -l en-US --json "$f" > "$OUT"
+            node .github/scripts/languagetool-json-to-reviewdog.js "$OUT" "$f" |
               reviewdog -efm="%f: Line %l: %m" \
                 -name="LanguageTool" \
                 -reporter=github-pr-review \
