@@ -9,6 +9,7 @@ import rehypeExternalLinks from "rehype-external-links";
 import starlightLlmsTxt from "starlight-llms-txt";
 import starlightSidebarSwipe from "starlight-sidebar-swipe";
 import starlightTags from "starlight-tags";
+import sitemap from "@astrojs/sitemap";
 
 // https://astro.build/config
 export default defineConfig({
@@ -31,6 +32,7 @@ export default defineConfig({
   },
   integrations: [
     brainDbAstro(),
+    sitemap(),
     starlight({
       logo: {
         dark: "@/images/logo.svg",
