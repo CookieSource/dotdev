@@ -12,7 +12,13 @@ import type {
   SidebarGroup,
   SidebarLink,
 } from "node_modules/@astrojs/starlight/utils/routing/types";
-const { sidebar } = Astro.locals.starlightRoute;
+
+let sidebar: SidebarEntry[] | undefined;
+try {
+  sidebar = Astro.locals.starlightRoute?.sidebar;
+} catch {
+  sidebar = undefined;
+}
 
 let docs = await getCollection("docs");
 
@@ -74,27 +80,29 @@ function sidebarLinks(path: string, sidebar: SidebarEntry[]): SidebarLink[] {
   });
 }
 
-let links = sidebarLinks(Astro.url.pathname, sidebar).map((item) => {
-  let page = docs.find(docMatchesHref(item.href));
-  if (page) {
-    return {
-      href: item.href,
-      label: item.label,
-      description: page.data.description,
-    };
-  }
-  return {
-    href: item.href,
-    label: item.label,
-    description: null,
-  };
-});
+let links = sidebar
+  ? sidebarLinks(Astro.url.pathname, sidebar).map((item) => {
+      let page = docs.find(docMatchesHref(item.href));
+      if (page) {
+        return {
+          href: item.href,
+          label: item.label,
+          description: page.data.description,
+        };
+      }
+      return {
+        href: item.href,
+        label: item.label,
+        description: null,
+      };
+    })
+  : [];
 ---
 
-<CardGrid>
-  {
-    links.map((p) => (
+{links.length > 0 && (
+  <CardGrid>
+    {links.map((p) => (
       <LinkCard href={p.href} title={p.label} description={p.description} />
-    ))
-  }
-</CardGrid>
+    ))}
+  </CardGrid>
+)}
