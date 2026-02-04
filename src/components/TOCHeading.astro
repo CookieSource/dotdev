@@ -1,0 +1,47 @@
+---
+import type { MarkdownHeading } from "astro";
+
+type TOCItem = MarkdownHeading & {
+  children: TOCItem[];
+};
+
+interface Props {
+  headings: TOCItem[];
+}
+
+const { headings } = Astro.props;
+---
+
+{
+  headings.length > 0 && (
+    <ul>
+      {headings.map((heading) => (
+        <li>
+          <a href={`#${heading.slug}`}><span>{heading.text}</span></a>
+          <Astro.self headings={heading.children} />
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+<style>
+  ul {
+    list-style: none;
+    padding-left: 1rem;
+    margin: 0;
+  }
+
+  li a {
+    display: inline-flex;
+    align-items: center;
+    padding-left: 0.5rem;
+    line-height: 1.5;
+    padding-bottom: 2px;
+    text-decoration: none;
+  }
+
+  li a.active {
+    color: var(--sl-color-text-accent);
+  }
+</style>

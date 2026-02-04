@@ -55,6 +55,7 @@ export default defineConfig({
       lastUpdated: true,
       components: {
         LastUpdated: "./src/components/LastUpdated.astro",
+        TableOfContents: "./src/components/TableOfContents.astro",
       },
       plugins: [
         starlightLinksValidator(),

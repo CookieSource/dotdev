@@ -1,0 +1,55 @@
+---
+import TOCHeading from "./TOCHeading.astro";
+
+const toc = Astro.locals.starlightRoute.toc?.items ?? [];
+const headingId = "starlight__on-this-page";
+---
+
+{toc.length > 0 && (
+  <section class="toc-shell">
+    <h2 id={headingId}>{Astro.locals.t("tableOfContents.onThisPage")}</h2>
+    <nav class="toc-new" aria-labelledby={headingId}>
+      <TOCHeading headings={toc} />
+      <svg class="toc-progress" xmlns="http://www.w3.org/2000/svg">
+        <path
+          class="toc-marker"
+          fill="none"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-width="2"
+          stroke-dashoffset="1"
+          stroke-linejoin="round"></path>
+      </svg>
+    </nav>
+  </section>
+)}
+
+<style>
+  .toc-shell {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .toc-new {
+    position: relative;
+    margin-left: -1rem;
+    padding-left: 1rem;
+  }
+
+  .toc-progress {
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .toc-marker {
+    transition: stroke-dasharray 0.3s ease;
+    color: var(--sl-color-text-accent);
+  }
+</style>
+
+<script>
+  import "./toc.js";
+</script>
