@@ -1,0 +1,25 @@
+---
+import Default from "@astrojs/starlight/components/Head.astro";
+
+const entry = Astro.locals.starlightRoute?.entry;
+
+const ogImageUrl = entry
+  ? new URL(`/og/${toOgSlug(entry.id)}`, Astro.site)
+  : null;
+
+function toOgSlug(id) {
+  let slug = id.replace(/\.[^/.]+$/, "") + ".png";
+  slug = slug.replace(/\/index\.png$/, ".png");
+  return slug;
+}
+---
+
+<Default {...Astro.props}><slot /></Default>
+
+{ogImageUrl && (
+  <>
+    <meta property="og:image" content={ogImageUrl} />
+    <meta name="twitter:image" content={ogImageUrl} />
+    <meta name="twitter:card" content="summary_large_image" />
+  </>
+)}

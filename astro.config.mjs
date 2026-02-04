@@ -75,6 +75,7 @@ export default defineConfig({
       lastUpdated: true,
       components: {
         LastUpdated: "./src/components/LastUpdated.astro",
+        Head: "./src/components/Head.astro",
         TableOfContents: "./src/components/TableOfContents.astro",
       },
       plugins: [
