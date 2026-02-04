@@ -6,6 +6,7 @@ import starlightScrollToTop from "starlight-scroll-to-top";
 import starlightKbd from "starlight-kbd";
 import { brainDbAstro } from "@braindb/astro";
 import rehypeExternalLinks from "rehype-external-links";
+import starlightLlmsTxt from "starlight-llms-txt";
 
 // https://astro.build/config
 export default defineConfig({
@@ -78,6 +79,7 @@ export default defineConfig({
       },
       plugins: [
         starlightLinksValidator(),
+        starlightLlmsTxt(),
         starlightScrollToTop({
           position: "right",
           showTooltip: true,
