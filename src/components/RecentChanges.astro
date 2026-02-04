@@ -1,0 +1,56 @@
+---
+import { getBrainDb } from "@braindb/astro";
+import type { Document } from "@braindb/core";
+
+const docs = await getBrainDb().documents({ sort: ["updated_at", "desc"] });
+
+const docsByDate = new Map<string, Document[]>();
+
+docs
+  .filter(
+    (doc) => doc.frontmatter().draft !== true || import.meta.env.DEV
+  )
+  .forEach((doc) => {
+    const date = doc.updatedAt().toISOString().split("T")[0];
+    docsByDate.set(date, docsByDate.get(date) || []);
+    docsByDate.get(date)?.push(doc);
+  });
+
+const dates = Array.from(docsByDate.keys()).map((date) => [
+  date,
+  date.split("-").reverse().join("."),
+]);
+---
+
+<div class="recent-changes">
+  {dates.map(([key, title]) => (
+    <section>
+      <h3>{title}</h3>
+      <ul>
+        {docsByDate.get(key)?.map((doc) => (
+          <li>
+            <a href={doc.url()}>{doc.title()}</a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  ))}
+</div>
+
+<style>
+  .recent-changes {
+    display: grid;
+    gap: 1.5rem;
+  }
+
+  h3 {
+    margin-bottom: 0.5rem;
+    font-size: var(--sl-text-base);
+    color: var(--sl-color-gray-2);
+  }
+
+  ul {
+    margin: 0;
+    padding-left: 1.25rem;
+  }
+</style>

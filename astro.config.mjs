@@ -4,11 +4,13 @@ import starlight from "@astrojs/starlight";
 import starlightLinksValidator from "starlight-links-validator";
 import starlightScrollToTop from "starlight-scroll-to-top";
 import starlightKbd from "starlight-kbd";
+import { brainDbAstro } from "@braindb/astro";
 
 // https://astro.build/config
 export default defineConfig({
   site: "https://aerynos.dev",
   integrations: [
+    brainDbAstro(),
     starlight({
       logo: {
         dark: "@/images/logo.svg",
@@ -207,6 +209,10 @@ export default defineConfig({
               ],
             },
           ],
+        },
+        {
+          label: "Meta",
+          items: [{ slug: "recent" }],
         },
       ],
     }),
