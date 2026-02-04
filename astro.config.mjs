@@ -7,6 +7,7 @@ import starlightKbd from "starlight-kbd";
 import { brainDbAstro } from "@braindb/astro";
 import rehypeExternalLinks from "rehype-external-links";
 import starlightLlmsTxt from "starlight-llms-txt";
+import starlightSidebarSwipe from "starlight-sidebar-swipe";
 
 // https://astro.build/config
 export default defineConfig({
@@ -81,6 +82,7 @@ export default defineConfig({
       plugins: [
         starlightLinksValidator(),
         starlightLlmsTxt(),
+        starlightSidebarSwipe(),
         starlightScrollToTop({
           position: "right",
           showTooltip: true,
