@@ -31,3 +31,7 @@ https://starlight.astro.build/guides/css-and-tailwind/#color-theme-editor
 	--sl-color-gray-7: #f6f6f8;
 	--sl-color-black: #ffffff;
 }
+
+.no-select {
+	user-select: none;
+}

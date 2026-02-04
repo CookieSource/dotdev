@@ -5,10 +5,27 @@ import starlightLinksValidator from "starlight-links-validator";
 import starlightScrollToTop from "starlight-scroll-to-top";
 import starlightKbd from "starlight-kbd";
 import { brainDbAstro } from "@braindb/astro";
+import rehypeExternalLinks from "rehype-external-links";
 
 // https://astro.build/config
 export default defineConfig({
   site: "https://aerynos.dev",
+  markdown: {
+    rehypePlugins: [
+      [
+        rehypeExternalLinks,
+        {
+          target: "_blank",
+          rel: ["nofollow", "noopener"],
+          content: { type: "text", value: " ↗" },
+          contentProperties: {
+            "aria-hidden": true,
+            class: "no-select",
+          },
+        },
+      ],
+    ],
+  },
   integrations: [
     brainDbAstro(),
     starlight({
