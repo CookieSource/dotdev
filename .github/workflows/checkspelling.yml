@@ -1,0 +1,64 @@
+name: Grammar Check (PR Changes Only)
+
+on:
+  pull_request:
+
+jobs:
+  grammar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Get changed markdown files
+        id: changed
+        uses: tj-actions/changed-files@v39
+        with:
+          files: |
+            **/*.md
+            **/*.mdx
+
+      - name: Skip if no .md/.mdx files changed
+        if: steps.changed.outputs.any_changed != 'true'
+        run: echo "No markdown or MDX files changed."
+
+      - name: Set up Node
+        if: steps.changed.outputs.any_changed == 'true'
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install MDX cleaner dependencies
+        if: steps.changed.outputs.any_changed == 'true'
+        run: npm install remark remark-mdx strip-markdown
+
+      - name: Extract prose from changed docs
+        if: steps.changed.outputs.any_changed == 'true'
+        run: |
+          mkdir -p dist
+          for file in ${{ steps.changed.outputs.all_changed_files }}; do
+            if [[ "$file" == *.md || "$file" == *.mdx ]]; then
+              node .github/scripts/clean-mdx.js "$file" > "dist/${file//\//_}.txt"
+            fi
+          done
+
+      - name: Download LanguageTool CLI
+        if: steps.changed.outputs.any_changed == 'true'
+        run: |
+          curl -L -o lt.zip https://languagetool.org/download/LanguageTool-stable.zip
+          unzip lt.zip
+          echo "LT_PATH=$(pwd)/LanguageTool-*/languagetool-commandline.jar" >> $GITHUB_ENV
+
+      - name: Run LanguageTool with reviewdog
+        if: steps.changed.outputs.any_changed == 'true'
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for f in dist/*.txt; do
+            java -jar $LT_PATH -l en-US "$f" |
+              reviewdog -efm="%f: Line %l: %m" \
+                -name="LanguageTool" \
+                -reporter=github-pr-review \
+                -filter-mode=added \
+                -fail-on-error=false
+          done
